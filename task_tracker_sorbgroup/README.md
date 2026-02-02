@@ -1,4 +1,4 @@
-#task-tracker-sorbgroup
+# task-tracker-sorbgroup
 
 Задание - парсинг бинарного файла.
 
