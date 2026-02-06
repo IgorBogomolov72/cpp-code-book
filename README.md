@@ -9,4 +9,4 @@ tcp_udp_http
     radio - UDP протокол
     http_simple - простой HTTP-сервер с Boost.Asio
 
-
+cpp-calculator - Разработка в Qt
