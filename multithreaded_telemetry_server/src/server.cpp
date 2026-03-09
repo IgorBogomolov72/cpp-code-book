@@ -1,9 +1,13 @@
 #include "socket_raii.h"
 
+#include <algorithm>
 #include <fmt/format.h>
 #include <iostream>
 #include <stdio.h>
 #include <string.h>
+#include <thread>
+#include <vector>
+#include <ranges>
 
 #include <arpa/inet.h>
 #include <atomic>
@@ -20,6 +24,34 @@ std::atomic<bool> stop_flag{false};
 void HandleSignal(int signal) {
     stop_flag = true;
     std::cout << " -received signal " << signal << std::endl;
+}
+
+void handleClient(Socket&& client_fd) {
+    try {
+        std::cout << "Connected to client." << std::endl;
+                
+        char buf[1024];
+    
+        int byte_received = recv(client_fd.GetFd(), buf, sizeof(buf), 0);
+    
+        if (byte_received < 0) {
+            throw std::runtime_error("RECV");
+        } else if (byte_received == 0) {
+            throw std::runtime_error("Client disconnected");
+        }
+        
+        buf[byte_received] = '\0';
+        std::cout << "Received: " << buf << std::endl;
+        
+        if (send(client_fd.GetFd(), buf, size_t(byte_received), 0) < 0) {
+            throw std::runtime_error("SEND");
+        }       
+
+        std::cout << "Shutting down..." << std::endl;
+        
+    } catch (const std::exception& ex) {
+        std::cerr << "Exception: " << ex.what() << ", " << strerror(errno) << std::endl;
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -54,36 +86,28 @@ int main(int argc, char *argv[]) {
 
         socklen_t addr_size = sizeof(their_addr);
 
-        while (!stop_flag)
-        {
+        std::vector<std::jthread> threads;
+
+        while (!stop_flag) {
             Socket client_fd(accept(socket_fd.GetFd(), (struct sockaddr *)&their_addr, &addr_size));
-    
+
             if (client_fd.GetFd() < 0) {
-                std::cerr << "accept error: " << strerror(errno) << std::endl;
+                if (errno == EINTR) continue;
                 throw std::runtime_error("accept");
             }
-    
-            char buf[1024];
-    
-            int byte_received = recv(client_fd.GetFd(), buf, sizeof(buf), 0);
-    
-            if (byte_received <= 0) {
-                std::cerr << "received error: " << strerror(errno) << std::endl;
-                throw std::runtime_error("received");
-            }
-    
-            buf[byte_received] = '\0';
-            std::cout << "Received: " << buf << std::endl;
-    
-            send(client_fd.GetFd(), buf, size_t(byte_received), 0);
-    
-            std::cout << "Shutting down..." << std::endl;
+
+            threads.emplace_back(handleClient, std::move(client_fd));
         }
-        
-    } catch (const std::exception &e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+
+        std::ranges::for_each(threads, [](std::jthread &thread) { thread.join(); });
+        std::cout << "All threads join" << std::endl;
+
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << " -> " << strerror(errno) << std::endl;
         return 1;
     }
+
+    std::cout << "Server terminates" << std::endl;
 
     return 0;
 }
