@@ -21,7 +21,6 @@ public:
         if (fd_ != -1) {
             close(fd_);
         }
-        // std::cout << "Destructed socket" << std::endl;
     }
     Socket(const Socket &) = delete;
     Socket &operator=(const Socket &) = delete;
@@ -65,7 +64,6 @@ public:
         if (ai_) {
             freeaddrinfo(ai_);
         }
-        // std::cout << "Destructed addrinfo" << std::endl;
     }
     AddrInfo(const AddrInfo &) = delete;
     AddrInfo &operator=(const AddrInfo &) = delete;

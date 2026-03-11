@@ -1,4 +1,5 @@
 #include "socket_raii.h"
+#include "thread_pool.h"
 
 #include <algorithm>
 #include <fmt/format.h>
@@ -23,7 +24,7 @@ std::atomic<bool> stop_flag{false};
 
 void HandleSignal(int signal) {
     stop_flag = true;
-    std::cout << " -received signal " << signal << std::endl;
+    std::cerr << " -received signal " << signal << std::endl;
 }
 
 void handleClient(Socket&& client_fd) {
@@ -86,8 +87,8 @@ int main(int argc, char *argv[]) {
 
         socklen_t addr_size = sizeof(their_addr);
 
-        std::vector<std::jthread> threads;
-
+        ThreadPool pool(4); // Create a thread pool with 4 threads
+    
         while (!stop_flag) {
             Socket client_fd(accept(socket_fd.GetFd(), (struct sockaddr *)&their_addr, &addr_size));
 
@@ -96,11 +97,11 @@ int main(int argc, char *argv[]) {
                 throw std::runtime_error("accept");
             }
 
-            threads.emplace_back(handleClient, std::move(client_fd));
+            pool.enqueue([client_fd = std::move(client_fd)]() mutable {
+                handleClient(std::move(client_fd));
+            });
+            
         }
-
-        std::ranges::for_each(threads, [](std::jthread &thread) { thread.join(); });
-        std::cout << "All threads join" << std::endl;
 
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << " -> " << strerror(errno) << std::endl;

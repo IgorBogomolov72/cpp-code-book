@@ -62,34 +62,6 @@ bool recv_request(const int sock) {
 }
 
 int main(int argc, char *argv[]) {
-    /*
-    struct sockaddr_storage their_addr;
-    socklen_t addr_size;
-    struct addrinfo hints;
-    struct addrinfo *result;
-    int status;
-
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-
-    if ((status = getaddrinfo("127.0.0.1", "8080", &hints, &result)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
-        exit(1);
-    }
-    int socket_fd = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-    if (socket_fd < 0) {
-        perror("client: socket");
-        freeaddrinfo(result);
-        return -1;
-    }
-    if (connect(socket_fd, result->ai_addr, result->ai_addrlen) != 0) {
-            std::cerr << "connect failed: " << strerror(errno) << std::endl;
-            freeaddrinfo(result);
-            close(socket_fd);
-            return 1;
-    }
-    */
     try {
 
         AddrInfo addr("127.0.0.1", "8080", AI_PASSIVE);
@@ -124,43 +96,12 @@ int main(int argc, char *argv[]) {
         printf("Peer IP address: %s\n", ipstr);
         printf("Peer port: %d\n", port);
 
-        // size_t lenght;
-        // char msg[1024] = "Hello server!";
-        // lenght = strlen(msg);
-
         std::string sent_message{"Hello server!"};
 
-        /*
-        int sent_bytes;
-        sent_bytes = send(socket_fd, sent_message.c_str(), sent_message.length(), 0);
-
-        if (sent_bytes < 0) {
-            std::cerr << "send failed: " << strerror(errno) << std::endl;
-            freeaddrinfo(result);
-            close(socket_fd);
-            return 1;
-        }
-
-        std::cout << "Send: " << sent_bytes << " byte" << std::endl;
-        */
         if (!send_request(socket_fd.GetFd(), sent_message)) {
             throw std::system_error(errno, std::system_category(), "send");
         }
-        /*
-        std::array<char, 1024> recv_message;
-        try {
-            int recv_byte = recv(socket_fd, recv_message.data(), recv_message.size(), 0);
-            if (recv_byte <= 0) {
-                throw std::system_error(errno, std::system_category(), "recv");
-            }
-            recv_message[recv_byte] = '\0';
-            std::cout << "Received message: " << recv_message.data() << std::endl;
 
-        } catch (const std::exception &e) {
-            std::cerr << "Error: " << e.what() << std::endl;
-            return 1;
-        }
-        */
         if (!recv_request(socket_fd.GetFd())) {
             throw std::system_error(errno, std::system_category(), "recv");
         }
@@ -170,9 +111,6 @@ int main(int argc, char *argv[]) {
     }
 
     std::cout << "Success!" << std::endl;
-
-    //freeaddrinfo(result);
-    //close(socket_fd);
 
     return 0;
 }
