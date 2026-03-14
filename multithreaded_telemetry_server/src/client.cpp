@@ -62,6 +62,7 @@ bool recv_request(const int sock) {
 }
 
 int main(int argc, char *argv[]) {
+
     try {
 
         AddrInfo addr("127.0.0.1", "8080", AI_PASSIVE);
@@ -96,7 +97,7 @@ int main(int argc, char *argv[]) {
         printf("Peer IP address: %s\n", ipstr);
         printf("Peer port: %d\n", port);
 
-        std::string sent_message{"Hello server!"};
+        std::string sent_message{"device_1:temp=23.5,hum=60,press=1013"};
 
         if (!send_request(socket_fd.GetFd(), sent_message)) {
             throw std::system_error(errno, std::system_category(), "send");

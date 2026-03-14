@@ -41,7 +41,6 @@ public:
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
             stop_ = true;
-            std::cerr << "Stop - true" << std::endl;
         }
 
         cv_.notify_all();

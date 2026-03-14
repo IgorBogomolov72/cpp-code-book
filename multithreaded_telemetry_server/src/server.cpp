@@ -1,14 +1,17 @@
+#include "device.h"
 #include "socket_raii.h"
 #include "thread_pool.h"
 
 #include <algorithm>
 #include <fmt/format.h>
 #include <iostream>
+#include <ranges>
+#include <sstream>
 #include <stdio.h>
 #include <string.h>
+#include <string_view>
 #include <thread>
 #include <vector>
-#include <ranges>
 
 #include <arpa/inet.h>
 #include <atomic>
@@ -27,30 +30,76 @@ void HandleSignal(int signal) {
     std::cerr << " -received signal " << signal << std::endl;
 }
 
-void handleClient(Socket&& client_fd) {
+bool ParserData(std::string data, DeviceRegistry& device_registry) {
+    std::cout << "Parser run..." << std::endl;
+
+    auto colon_pos = data.find(':');
+    if (colon_pos == std::string::npos) {
+        return false;
+    }
+
+    std::string device_id = data.substr(0, colon_pos);
+    std::string readings = data.substr(colon_pos + 1);
+
+    DeviceState state;
+    state.device_id_ = device_id;
+    state.last_update_ = std::chrono::system_clock::now();
+
+    std::istringstream ss(readings);
+    std::string token;
+
+    while (std::getline(ss, token, ',')) {
+        auto eq_pos = token.find('=');
+        if (eq_pos == std::string::npos) continue;
+
+        std::string key = token.substr(0,eq_pos);
+        double value = std::stod(token.substr(eq_pos + 1));
+
+        if (key == "temp") {
+            state.temperature_ = value;
+        } else if (key == "hum") {
+            state.humidity_ = value;
+        } else if (key == "press") {
+            state.pressure_ = value;
+        }
+    }
+
+    std::cout << "Parser down." << std::endl;
+
+    device_registry.UpdateDevice(state);
+
+    return true;
+}
+
+void handleClient(Socket &&client_fd, DeviceRegistry& device_registry) {
     try {
         std::cout << "Connected to client." << std::endl;
-                
+
         char buf[1024];
-    
+
         int byte_received = recv(client_fd.GetFd(), buf, sizeof(buf), 0);
-    
+
         if (byte_received < 0) {
             throw std::runtime_error("RECV");
         } else if (byte_received == 0) {
             throw std::runtime_error("Client disconnected");
         }
-        
+
         buf[byte_received] = '\0';
         std::cout << "Received: " << buf << std::endl;
-        
-        if (send(client_fd.GetFd(), buf, size_t(byte_received), 0) < 0) {
-            throw std::runtime_error("SEND");
-        }       
+
+        if (ParserData(buf, device_registry)){
+            if (send(client_fd.GetFd(), "Ok", 2, 0) < 0) {
+                throw std::runtime_error("SEND");
+            }
+        } else {
+            throw std::runtime_error("PARSER");
+        }
+
 
         std::cout << "Shutting down..." << std::endl;
-        
-    } catch (const std::exception& ex) {
+
+    } catch (const std::exception &ex) {
         std::cerr << "Exception: " << ex.what() << ", " << strerror(errno) << std::endl;
     }
 }
@@ -87,23 +136,24 @@ int main(int argc, char *argv[]) {
 
         socklen_t addr_size = sizeof(their_addr);
 
-        ThreadPool pool(4); // Create a thread pool with 4 threads
-    
+        ThreadPool pool(4);                     // Создаем пулл с 4 потоками
+        DeviceRegistry device_registry;         // Создаем объект для регистрации устройств
+
         while (!stop_flag) {
             Socket client_fd(accept(socket_fd.GetFd(), (struct sockaddr *)&their_addr, &addr_size));
 
             if (client_fd.GetFd() < 0) {
-                if (errno == EINTR) continue;
+                if (errno == EINTR)
+                    continue;
                 throw std::runtime_error("accept");
             }
 
-            pool.enqueue([client_fd = std::move(client_fd)]() mutable {
-                handleClient(std::move(client_fd));
+            pool.enqueue([client_fd = std::move(client_fd), &device_registry]() mutable {
+                handleClient(std::move(client_fd), device_registry);
             });
-            
         }
 
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         std::cerr << "Error: " << e.what() << " -> " << strerror(errno) << std::endl;
         return 1;
     }
