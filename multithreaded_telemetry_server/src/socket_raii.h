@@ -22,11 +22,11 @@ public:
             close(fd_);
         }
     }
-    Socket(const Socket &) = delete;
-    Socket &operator=(const Socket &) = delete;
+    Socket(const Socket&) = delete;
+    Socket &operator=(const Socket&) = delete;
     Socket(Socket &&other) noexcept : fd_(other.fd_) { other.fd_ = -1; }
 
-    Socket &operator=(Socket &&other) noexcept {
+    Socket &operator=(Socket&& other) noexcept {
         if (this != &other) {
             if (fd_ != -1)
                 close(fd_);

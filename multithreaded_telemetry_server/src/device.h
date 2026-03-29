@@ -15,7 +15,6 @@ struct DeviceState {
     double pressure_ = 0.0;
     std::chrono::system_clock::time_point last_update_;
 
-    //
     bool IsStale() const {
         auto now = std::chrono::system_clock::now();
         return (now - last_update_) > std::chrono::minutes(5);
@@ -50,5 +49,6 @@ public:
 
 private:
     std::unordered_map<std::string, DeviceState> devices_;
+    
     mutable std::shared_mutex mutex_;
 };

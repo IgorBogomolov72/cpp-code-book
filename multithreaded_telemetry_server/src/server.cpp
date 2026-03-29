@@ -1,6 +1,7 @@
 #include "device.h"
 #include "socket_raii.h"
 #include "thread_pool.h"
+#include "database.h"
 
 #include <algorithm>
 #include <fmt/format.h>
@@ -30,8 +31,7 @@ void HandleSignal(int signal) {
     std::cerr << " -received signal " << signal << std::endl;
 }
 
-bool ParserData(std::string data, DeviceRegistry& device_registry) {
-    std::cout << "Parser run..." << std::endl;
+bool ParserData(std::string data, DeviceState& state) {
 
     auto colon_pos = data.find(':');
     if (colon_pos == std::string::npos) {
@@ -41,7 +41,6 @@ bool ParserData(std::string data, DeviceRegistry& device_registry) {
     std::string device_id = data.substr(0, colon_pos);
     std::string readings = data.substr(colon_pos + 1);
 
-    DeviceState state;
     state.device_id_ = device_id;
     state.last_update_ = std::chrono::system_clock::now();
 
@@ -64,14 +63,21 @@ bool ParserData(std::string data, DeviceRegistry& device_registry) {
         }
     }
 
-    std::cout << "Parser down." << std::endl;
-
-    device_registry.UpdateDevice(state);
-
     return true;
 }
 
-void handleClient(Socket &&client_fd, DeviceRegistry& device_registry) {
+void UpdateDataMapDevice(DeviceRegistry& device_registry, DeviceState& state){
+    //std::cout << "Обновляем данные DeviceRegistry" << std::endl;
+    device_registry.UpdateDevice(state);
+}
+
+void SaveDataToDB(DataBase& db, DeviceState& state){
+    //std::cout << "Передаем в очередь на запись в базу " << std::endl;
+    db.InsertReadingDataDevice(state);
+
+}
+
+void handleClient(Socket &&client_fd, DeviceRegistry& device_registry, DataBase& db) {
     try {
         std::cout << "Connected to client." << std::endl;
 
@@ -88,16 +94,20 @@ void handleClient(Socket &&client_fd, DeviceRegistry& device_registry) {
         buf[byte_received] = '\0';
         std::cout << "Received: " << buf << std::endl;
 
-        if (ParserData(buf, device_registry)){
+        DeviceState state;  // Создаем объект для парсинга структуры данных
+
+        if (ParserData(buf, state)){
             if (send(client_fd.GetFd(), "Ok", 2, 0) < 0) {
                 throw std::runtime_error("SEND");
             }
         } else {
             throw std::runtime_error("PARSER");
         }
-
-
-        std::cout << "Shutting down..." << std::endl;
+        
+        //std::cout << "Parsing, ok" << std::endl;
+        
+        UpdateDataMapDevice(device_registry, state);
+        SaveDataToDB(db, state);
 
     } catch (const std::exception &ex) {
         std::cerr << "Exception: " << ex.what() << ", " << strerror(errno) << std::endl;
@@ -105,39 +115,41 @@ void handleClient(Socket &&client_fd, DeviceRegistry& device_registry) {
 }
 
 int main(int argc, char *argv[]) {
+    
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = HandleSignal;
-
+    
     sigemptyset(&sa.sa_mask);
     sigaddset(&sa.sa_mask, SIGINT);
     sigaction(SIGINT, &sa, 0);
-
+    
     try {
-
+        
         AddrInfo addr(nullptr, "8080", AI_PASSIVE);
         Socket socket_fd(socket(addr.Get()->ai_family, addr.Get()->ai_socktype, addr.Get()->ai_protocol));
-
+        
         if (socket_fd.GetFd() < 0) {
             throw std::runtime_error("socket");
         }
-
+        
         if (bind(socket_fd.GetFd(), addr.Get()->ai_addr, addr.Get()->ai_addrlen) < 0) {
             throw std::runtime_error("bind");
         }
-
+        
         if (listen(socket_fd.GetFd(), SOMAXCONN) < 0) {
             throw std::runtime_error("listen");
         }
-
+        
         std::cout << "Server is listening for connections..." << std::endl;
-
+        
         struct sockaddr_storage their_addr;
-
+        
         socklen_t addr_size = sizeof(their_addr);
-
+        
         ThreadPool pool(4);                     // Создаем пулл с 4 потоками
         DeviceRegistry device_registry;         // Создаем объект для регистрации устройств
+        DataBase data_base;                     // Создаем объект для доступа к базе SQLite
 
         while (!stop_flag) {
             Socket client_fd(accept(socket_fd.GetFd(), (struct sockaddr *)&their_addr, &addr_size));
@@ -148,8 +160,8 @@ int main(int argc, char *argv[]) {
                 throw std::runtime_error("accept");
             }
 
-            pool.enqueue([client_fd = std::move(client_fd), &device_registry]() mutable {
-                handleClient(std::move(client_fd), device_registry);
+            pool.enqueue([client_fd = std::move(client_fd), &device_registry, &data_base]() mutable {
+                handleClient(std::move(client_fd), device_registry, data_base);
             });
         }
 

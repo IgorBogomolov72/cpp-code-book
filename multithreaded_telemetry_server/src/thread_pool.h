@@ -46,7 +46,7 @@ public:
         cv_.notify_all();
 
         for (auto& thread : threads_) {
-            std::cerr << "Join " << thread.get_id() << std::endl;
+            //std::cerr << "Join " << thread.get_id() << std::endl;
             thread.join();
         }
     }
